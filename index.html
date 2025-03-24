@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Places</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="config.js"></script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+            font-size: 16px;
+            color: rgb(33, 37, 41);
+            margin: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th,
+        td {
+            border: 1px solid rgb(222, 226, 230);
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f4f4f4;
+            font-weight: 700;
+        }
+
+        input {
+            width: 241px;
+            height: 38px;
+            font-size: 16px;
+            background-color: rgb(255, 255, 255);
+            border: 1px solid rgb(206, 212, 218);
+            padding: 6px 12px;
+            border-radius: 4px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        input:focus {
+            border-color: #7952b3;
+            box-shadow: 0 0 0 3px rgb(121 82 179 / 25%);
+            outline: none;
+        }
+
+        input:disabled {
+            background-color: rgb(233, 236, 239);
+        }
+
+        .spinner {
+            display: none;
+            margin: 10px auto;
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #7952b3;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .pagination-container {
+            display: none;
+            align-items: center;
+            justify-content: flex-end;
+            margin-top: 10px;
+            width: 100%;
+            gap: 6px
+        }
+
+        .pagination-container button,
+        .pagination-container input {
+            margin-left: 5px;
+            padding: 5px 10px;
+            border: 1px solid rgb(206, 212, 218);
+            background: white;
+            cursor: pointer;
+        }
+
+        .pagination-container input {
+            width: 60px;
+            text-align: center;
+            height: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Search Places</h2>
+    <input type="text" id="search" placeholder="Start typing to search places...">
+    <div class="spinner" id="spinner"></div>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Place Name</th>
+                <th>Country</th>
+            </tr>
+        </thead>
+        <tbody id="table-body">
+            <tr>
+                <td colspan="3">Start searching</td>
+            </tr>
+        </tbody>
+    </table>
+    <div class="pagination-container" id="pagination-container">
+        <button id="prev-page">Previous</button>
+        <span id="current-page">Page 1</span>
+        <button id="next-page">Next</button>
+        <input type="number" id="limit" placeholder="Enter fetch limit (5-10)" min="5" max="10" value="5">
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let totalPages = 1;
+
+        async function fetchCities(query, page = 1) {
+            let tableBody = document.getElementById('table-body');
+            let spinner = document.getElementById('spinner');
+            let limitInput = document.getElementById('limit');
+            let limit = parseInt(limitInput.value, 10);
+
+            if (limit < 5 || limit > 10) {
+                alert('Limit must be between 5 and 10');
+                return;
+            }
+
+            if (!query.trim()) {
+                tableBody.innerHTML = '<tr><td colspan="3">Start searching</td></tr>';
+                document.getElementById('pagination-container').style.display = 'none';
+                return;
+            }
+
+            if (query.length < 1) return;
+
+            spinner.style.display = 'block';
+
+            const options = {
+                method: 'GET',
+                url: 'https://wft-geo-db.p.rapidapi.com/v1/geo/cities',
+                params: { namePrefix: query, limit: limit, offset: (page - 1) * limit },
+                headers: {
+                    'x-rapidapi-key': API_KEY,
+                    'x-rapidapi-host': 'wft-geo-db.p.rapidapi.com'
+                }
+            };
+
+            try {
+                const response = await axios.request(options);
+                const cities = response.data.data;
+                totalPages = Math.ceil(response.data.metadata.totalCount / limit);
+                document.getElementById('current-page').textContent = `Page ${currentPage}`;
+
+                tableBody.innerHTML = '';
+                document.getElementById('pagination-container').style.display = cities.length ? 'flex' : 'none';
+
+                if (cities.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="3">No result found</td></tr>';
+                } else {
+                    cities.forEach((city, index) => {
+                        let flagUrl = `https://flagsapi.com/${city.countryCode}/flat/32.png`;
+                        let row = `<tr>
+                            <td>${index + 1 + (page - 1) * limit}</td>
+                            <td>${city.name}</td>
+                            <td><img src="${flagUrl}" alt="${city.country}" style="width: 20px; height: 15px;"> ${city.country}</td>
+                        </tr>`;
+                        tableBody.innerHTML += row;
+                    });
+                }
+            } catch (error) {
+                console.error(error);
+                tableBody.innerHTML = '<tr><td colspan="3">Error fetching results</td></tr>';
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        function throttle(func, delay) {
+            let lastCall = 0;
+            return function (...args) {
+                const now = new Date().getTime();
+                if (now - lastCall < delay) return;
+                lastCall = now;
+                return func.apply(this, args);
+            };
+        }
+
+        document.getElementById('search').addEventListener('keydown', throttle(function (event) {
+            if (event.key === 'Enter') {
+                fetchCities(this.value);
+            }
+        }, 1000));
+
+        document.getElementById('prev-page').addEventListener('click', throttle(() => {
+            if (currentPage > 1) fetchCities(document.getElementById('search').value, --currentPage);
+        }, 1500));
+
+        document.getElementById('next-page').addEventListener('click', throttle(() => {
+            if (currentPage < totalPages) fetchCities(document.getElementById('search').value, ++currentPage);
+        }, 1500));
+    </script>
+</body>
+
+</html>
